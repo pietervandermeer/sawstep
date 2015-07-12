@@ -2,10 +2,6 @@
 ; sawbench step sequencer, for atari st, by pieter van der meer, 2015
 ;
 
-;
-; attempt to reprioritize ui, comms and sequencing tasks in the right way
-;
-
 ENABLE_INTERRUPTS:	=	1
 
 sawbench:
@@ -82,11 +78,17 @@ init:
 ; set midi channel in cc packets
 	move.b	channel,d0
 	or.b	d0,glide_packet
-	move.w	#50,numticks
 
-; reset sequencer
-	clr.w	position
-	clr.w	playing
+; reset sequencer tempo, position, effects
+	move.w	#50,numticks
+	moveq	#0,d0
+	move.w	d0,position
+	move.w	d0,next_position
+	move.w	d0,playing
+	move.w	d0,fm_pending
+	move.w	d0,glide_pending
+	move.w	d0,adsrloopmask_pending
+	move.b	d0,adsrloopmask_packet+2
 
 ; reset program state
 	clr.w	exit_engaged
@@ -235,21 +237,22 @@ handle_gemdos_keys:
 	bne.s	.check_minus
 	subq.w	#1,numticks
 	cmpi.w	#MIN_NUMTICKS,numticks
-	bgt.s	.end
+	bgt	.end
 	move.w	#MIN_NUMTICKS,numticks
-	bra.s	.end
+	bra	.end
 .check_minus:
 	cmpi.b	#$4A,d1				; keypad +
 	bne.s	.not_plus
 	addq.w	#1,numticks
 	cmpi.w	#MAX_NUMTICKS,numticks
-	blt.s	.end
+	blt	.end
 	move.w	#MAX_NUMTICKS,numticks
 .not_plus:
 
 ; glide	
 	cmpi.b	#"g",d0
 	bne.s	.not_g
+	st	glide_pending
 	lea	glide_packet+2,a0
 	addq.b	#1,(a0)
 	bpl.s	.not_g
@@ -258,6 +261,7 @@ handle_gemdos_keys:
 
 	cmpi.b	#"G",d0
 	bne.s	.not_G
+	st	glide_pending
 	lea	glide_packet+2,a0
 	subq.b	#1,(a0)
 	bgt.s	.not_G
@@ -267,6 +271,7 @@ handle_gemdos_keys:
 ; FM
 	cmpi.b	#"F",d0
 	bne.s	.not_F
+	st	fm_pending
 	lea	fm_packet+2,a0
 	addq.b	#1,(a0)
 	bpl.s	.not_F
@@ -275,13 +280,62 @@ handle_gemdos_keys:
 
 	cmpi.b	#"f",d0
 	bne.s	.not_f
+	st	fm_pending
 	lea	fm_packet+2,a0
 	subq.b	#1,(a0)
 	bpl.s	.not_f
 	move.b	#0,(a0)
 .not_f:
 
+	cmpi.b	#"[",d0
+	bne.s	.not_lbracket
+	st	adsrloopmask_pending
+	lea	adsrloopmask_packet+2,a0
+	bchg	#0,(a0)
+.not_lbracket:
+
+	cmpi.b	#"]",d0
+	bne.s	.not_rbracket
+	st	adsrloopmask_pending
+	lea	adsrloopmask_packet+2,a0
+	bchg	#1,(a0)
+.not_rbracket:
+
+	cmpi.b	#"T",d0
+	bne.s	.not_T
+	st	keytrack_pending
+	lea	keytrack_packet+2,a0
+	addq.b	#1,(a0)
+	bpl.s	.not_T
+	move.b	#127,(a0)
+.not_T:
+
+	cmpi.b	#"t",d0
+	bne.s	.not_t
+	st	keytrack_pending
+	lea	keytrack_packet+2,a0
+	subq.b	#1,(a0)
+	bpl.s	.not_t
+	move.b	#0,(a0)
+.not_t:
+
+	cmpi.b	#"l",d0
+	bne.s	.not_l
+	st	legato_pending
+	not.b	legato_packet+2
+	andi.b	#1,legato_packet+2
+.not_l:
+
+	cmpi.b	#"0",d0
+	bne.s	.not_0
+	lea	pattern,a0
+	move.w	position,d2
+	mulu.w	#3,d2
+	adda.w	d2,a0
+	move.b	#0,2(a0)		; zero velocity!
+.not_0:
 	
+
 .end:
 	rts
 
@@ -340,6 +394,7 @@ print_sequence:
 
 	move.b	#$A,(a0)+
 	move.b	#$D,(a0)+
+
 	moveq	#0,d0
 	move.b	glide_packet+2,d0
 	move.b	#"G",(a0)+
@@ -350,6 +405,7 @@ print_sequence:
 	move.b	(a3)+,(a0)+
 	move.b	(a3)+,(a0)+
 	move.b	(a3)+,(a0)+
+
 	moveq	#0,d0
 	move.b	fm_packet+2,d0
 	move.b	#"F",(a0)+
@@ -360,12 +416,68 @@ print_sequence:
 	move.b	(a3)+,(a0)+
 	move.b	(a3)+,(a0)+
 	move.b	(a3)+,(a0)+
+
+	moveq	#0,d0
+	move.b	keytrack_packet+2,d0
+	move.b	#"T",(a0)+
+	move.b	#" ",(a0)+
+	lsl.w	#2,d0
+	lea	(a1,d0.w),a3
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+
+	btst	#0,adsrloopmask_packet+2
+	beq.s	.la_color
+	move.b	#27,(a0)+
+	move.b	#"p",(a0)+
+.la_color:
+	move.b	#"l",(a0)+
+	move.b	#"a",(a0)+
+	btst	#0,adsrloopmask_packet+2
+	beq.s	.la_color2
+	move.b	#27,(a0)+
+	move.b	#"q",(a0)+
+.la_color2:
+
+	move.b	#" ",(a0)+
+
+	btst	#1,adsrloopmask_packet+2
+	beq.s	.lf_color
+	move.b	#27,(a0)+
+	move.b	#"p",(a0)+
+.lf_color:
+	move.b	#"l",(a0)+
+	move.b	#"f",(a0)+
+	btst	#1,adsrloopmask_packet+2
+	beq.s	.lf_color2
+	move.b	#27,(a0)+
+	move.b	#"q",(a0)+
+.lf_color2:
+
+	move.b	#" ",(a0)+
+
+	tst.b	legato_packet+2
+	beq.s	.leg_color
+	move.b	#27,(a0)+
+	move.b	#"p",(a0)+
+.leg_color:
+	move.b	#"L",(a0)+
+	tst.b	legato_packet+2
+	beq.s	.leg_color2
+	move.b	#27,(a0)+
+	move.b	#"q",(a0)+
+.leg_color2:
+
+	move.b	#" ",(a0)+
+
 	move.b	#27,(a0)+
 	move.b	#"A",(a0)+
 
-
 	move.b	#27,(a0)+
 	move.b	#"A",(a0)+
+
 	move.b	#$D,(a0)+
 	move.b	#0,(a0)+
 
@@ -375,6 +487,16 @@ print_sequence:
 	trap	#1
 	addq	#6,sp
 	
+	rts
+
+; a0: buffer
+; d7.w=nr of bytes -1
+send_midi:
+.loop:	move.b	$FFFFFC04.w,d0
+	andi.b	#2,d0
+	beq.s	.loop
+	move.b	(a0)+,$FFFFFC06.w
+	dbf	d7,.loop
 	rts
 
 ;-------------------------------------------------------------------------------
@@ -396,41 +518,63 @@ newvbl:	tst.w	playing
 	move.w	d2,d1
 	sub.w	old4bc,d1
 	cmp.w	numticks,d1			; 200 Hz ticks
-	blo.s	.note_done
+	blo	.note_done
 	move.w	d2,old4bc
 
 ; hard pokes into midi acia, seeing that midiws() doesn't work in interrupt.
+
+	move.w	next_position,position
 
 	lea	pattern,a0
 	move.w	position,d0
 	mulu.w	#3,d0
 	adda.w	d0,a0
 	moveq	#3-1,d7
-.loop:	move.b	$FFFFFC04.w,d0
-	andi.b	#2,d0
-	beq.s	.loop
-	move.b	(a0)+,$FFFFFC06.w
-	dbf	d7,.loop
+	bsr.s	send_midi
 
+	tst.w	glide_pending
+	beq.s	.glide_done
 	lea	glide_packet,a0
 	moveq	#3-1,d7
-.loop2:	move.b	$FFFFFC04.w,d0
-	andi.b	#2,d0
-	beq.s	.loop2
-	move.b	(a0)+,$FFFFFC06.w
-	dbf	d7,.loop2
+	bsr.s	send_midi
+	clr.w	glide_pending
+.glide_done:
 
+	tst.w	fm_pending
+	beq.s	.fm_done
 	lea	fm_packet,a0
 	moveq	#3-1,d7
-.loop3:	move.b	$FFFFFC04.w,d0
-	andi.b	#2,d0
-	beq.s	.loop3
-	move.b	(a0)+,$FFFFFC06.w
-	dbf	d7,.loop3
+	bsr	send_midi
+	clr.w	fm_pending
+.fm_done:
+
+	tst.w	adsrloopmask_pending
+	beq.s	.adsrloopmask_done
+	lea	adsrloopmask_packet,a0
+	moveq	#3-1,d7
+	bsr	send_midi
+	clr.w	adsrloopmask_pending
+.adsrloopmask_done:
+
+	tst.w	keytrack_pending
+	beq.s	.keytrack_done
+	lea	keytrack_packet,a0
+	moveq	#3-1,d7
+	bsr	send_midi
+	clr.w	keytrack_pending
+.keytrack_done:
+
+	tst.w	legato_pending
+	beq.s	.legato_done
+	lea	legato_packet,a0
+	moveq	#3-1,d7
+	bsr	send_midi
+	clr.w	legato_pending
+.legato_done:
 
 ; increase position
-	addq.w	#1,position
-	andi.w	#15,position
+	addq.w	#1,next_position
+	andi.w	#15,next_position
 
 .note_done:
 
@@ -460,11 +604,16 @@ newvbl:	;movem.l	d0-a6,-(sp)
 bootmsg:dc.b	27,"E"				; clear screen
 	dc.b	"Sawbench Step Sequencer, Tasty Chips Electronics 2015",$A,$D,0
 
-glide_packet:
-	dc.b	%10110000,$5B,127
-
 fm_packet:
 	dc.b	%10110000,$01,0
+keytrack_packet:
+	dc.b	%10110000,$59,64
+glide_packet:
+	dc.b	%10110000,$5B,127
+legato_packet:
+	dc.b	%10110000,$5C,0
+adsrloopmask_packet:
+	dc.b	%10110000,$5D,0
 
 	even
 
@@ -491,8 +640,7 @@ degas:	incbin	sawbench.pi3
 	bss
 
 	ds.l	1024
-stack:	ds.l	1
-	ds.l	1
+stack:	
 
 old4bc:	ds.w	1
 key_time:
@@ -504,8 +652,20 @@ old200hz:
 exit_engaged:
 	ds.w	1
 playing:ds.w	1
+glide_pending:
+	ds.w	1
+fm_pending:
+	ds.w	1
+adsrloopmask_pending:
+	ds.w	1
+keytrack_pending:
+	ds.w	1
+legato_pending:
+	ds.w	1
 
 numticks:
+	ds.w	1
+next_position:
 	ds.w	1
 position:
 	ds.w	1
