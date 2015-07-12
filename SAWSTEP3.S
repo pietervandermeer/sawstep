@@ -75,11 +75,23 @@ exit:
 ;-------------------------------------------------------------------------------
 
 ; initialize defaults, clear buffers, etc
-init:	move.w	#0,channel
+init:
+; set up default midi channel
+	move.w	#0,channel
+
+; set midi channel in cc packets
+	move.b	channel,d0
+	or.b	d0,glide_packet
 	move.w	#50,numticks
+
+; reset sequencer
 	clr.w	position
-	clr.w	exit_engaged
 	clr.w	playing
+
+; reset program state
+	clr.w	exit_engaged
+
+; prepare gui
 	bsr	precalc_velocity2text
 	bsr	copy_logo
 	rts
@@ -228,13 +240,48 @@ handle_gemdos_keys:
 	bra.s	.end
 .check_minus:
 	cmpi.b	#$4A,d1				; keypad +
-	bne.s	.end_ikbd
+	bne.s	.not_plus
 	addq.w	#1,numticks
 	cmpi.w	#MAX_NUMTICKS,numticks
 	blt.s	.end
 	move.w	#MAX_NUMTICKS,numticks
-.end_ikbd:
+.not_plus:
 
+; glide	
+	cmpi.b	#"g",d0
+	bne.s	.not_g
+	lea	glide_packet+2,a0
+	addq.b	#1,(a0)
+	bpl.s	.not_g
+	move.b	#127,(a0)
+.not_g:
+
+	cmpi.b	#"G",d0
+	bne.s	.not_G
+	lea	glide_packet+2,a0
+	subq.b	#1,(a0)
+	bgt.s	.not_G
+	move.b	#1,(a0)
+.not_G:
+
+; FM
+	cmpi.b	#"F",d0
+	bne.s	.not_F
+	lea	fm_packet+2,a0
+	addq.b	#1,(a0)
+	bpl.s	.not_F
+	move.b	#127,(a0)
+.not_F:
+
+	cmpi.b	#"f",d0
+	bne.s	.not_f
+	lea	fm_packet+2,a0
+	subq.b	#1,(a0)
+	bpl.s	.not_f
+	move.b	#0,(a0)
+.not_f:
+
+	
 .end:
 	rts
 
@@ -291,6 +338,32 @@ print_sequence:
 	addq	#3,a2				; a2: next midi packet
 	dbf	d7,.loop2
 
+	move.b	#$A,(a0)+
+	move.b	#$D,(a0)+
+	moveq	#0,d0
+	move.b	glide_packet+2,d0
+	move.b	#"G",(a0)+
+	move.b	#" ",(a0)+
+	lsl.w	#2,d0
+	lea	(a1,d0.w),a3
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	moveq	#0,d0
+	move.b	fm_packet+2,d0
+	move.b	#"F",(a0)+
+	move.b	#" ",(a0)+
+	lsl.w	#2,d0
+	lea	(a1,d0.w),a3
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	(a3)+,(a0)+
+	move.b	#27,(a0)+
+	move.b	#"A",(a0)+
+
+
 	move.b	#27,(a0)+
 	move.b	#"A",(a0)+
 	move.b	#$D,(a0)+
@@ -326,20 +399,7 @@ newvbl:	tst.w	playing
 	blo.s	.note_done
 	move.w	d2,old4bc
 
-	ifne	 0
-
-; send single note on from sequence
-	lea	pattern,a0
-	move.w	position,d0
-	mulu.w	#3,d0
-	adda.w	d0,a0
-	move.l	a0,-(sp)
-	move.w	#3,-(sp)
-	move.w	#12,-(sp)
-	trap	#14
-	addq	#8,sp
-
-	else
+; hard pokes into midi acia, seeing that midiws() doesn't work in interrupt.
 
 	lea	pattern,a0
 	move.w	position,d0
@@ -352,7 +412,21 @@ newvbl:	tst.w	playing
 	move.b	(a0)+,$FFFFFC06.w
 	dbf	d7,.loop
 
-	endc
+	lea	glide_packet,a0
+	moveq	#3-1,d7
+.loop2:	move.b	$FFFFFC04.w,d0
+	andi.b	#2,d0
+	beq.s	.loop2
+	move.b	(a0)+,$FFFFFC06.w
+	dbf	d7,.loop2
+
+	lea	fm_packet,a0
+	moveq	#3-1,d7
+.loop3:	move.b	$FFFFFC04.w,d0
+	andi.b	#2,d0
+	beq.s	.loop3
+	move.b	(a0)+,$FFFFFC06.w
+	dbf	d7,.loop3
 
 ; increase position
 	addq.w	#1,position
@@ -385,6 +459,12 @@ newvbl:	;movem.l	d0-a6,-(sp)
 
 bootmsg:dc.b	27,"E"				; clear screen
 	dc.b	"Sawbench Step Sequencer, Tasty Chips Electronics 2015",$A,$D,0
+
+glide_packet:
+	dc.b	%10110000,$5B,127
+
+fm_packet:
+	dc.b	%10110000,$01,0
 
 	even
 
