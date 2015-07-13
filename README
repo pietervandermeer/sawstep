@@ -13,8 +13,9 @@ should be enough.
 
 Description:
 
-The thing is rather simple at the moment. Just one pattern which just plays one
-way. You can edit the notes, stop, play and adjust tempo. 
+A step sequencer that can also control the sawbench' midi-only features. The 
+sequence is just 16 notes in a row that can be sped up and down and edited with
+the Atari's keyboard. 
 
 Controls:
 
@@ -28,13 +29,19 @@ num -      : decrease tempo
 .          : increase velocity
 up arrow   : increase key
 down arror : decrease key
+0          : set velocity to zero
+l          : toggle legato
+[          : toggle vca envelope looping
+]          : toggle vcf envelope looping
+g          : glide time up (slower)
+G          : glide time down (faster)
+f          : fm modulation depth down
+F          : FM modulation depth up
+t          : vcf keyboard tracking down
+T          : vcf keyboard tracking up
 
 Future updates:
 - multiple patterns
-- Controls knobs
-  - Legato
-  - ADSR looping
-  - glide
-  - FM
 - load/save
+- bpm indication
 - multi-channel (for controlling a beatbox in parallel)
