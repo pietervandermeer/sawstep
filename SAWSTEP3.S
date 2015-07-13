@@ -76,7 +76,7 @@ init:
 	move.w	#0,channel
 
 ; set midi channel in cc packets
-	move.b	channel,d0
+	move.w	channel,d0
 	or.b	d0,glide_packet
 
 ; reset sequencer tempo, position, effects
@@ -122,7 +122,7 @@ init_dummy_sequence:
 	moveq	#16-1,d7
 	moveq	#2*12,d1
 .loop:	move.b	#%10010000,d0
-	or.b	channel,d0
+	or.w	channel,d0
 	move.b	d0,(a0)+			; header
 	move.b	d1,(a0)+			; key
 	move.b	#127,(a0)+			; velocity
@@ -509,7 +509,13 @@ new200hz:
 	rts
 
 newvbl:	tst.w	playing
-	beq	.done_playing
+	bne	.play
+
+; required when going from stopped and editing -> playing
+	move.w	position,next_position
+	bra	.done_playing
+
+.play:
 
 	movem.l	d0-a6,-(sp)
 
@@ -532,11 +538,46 @@ newvbl:	tst.w	playing
 	moveq	#3-1,d7
 	bsr.s	send_midi
 
+; send note off (turn last note into a note off)
+	tst.b	legato_packet+2
+	bne.s	.no_last
+	lea	last_note,a0
+	tst.b	2(a0)				; velocity 0?
+	beq.s	.no_last
+	moveq	#0,d0
+	move.b	d0,2(a0)
+	moveq	#3-1,d7
+	bsr	send_midi
+.no_last:
+
+; send note on
+	lea	pattern,a0
+	move.w	position,d0
+	mulu.w	#3,d0
+	adda.w	d0,a0
+	movea.l	a0,a6
+	moveq	#3-1,d7
+	bsr	send_midi
+
+; store note on
+	lea	last_note,a0
+	move.b	(a6)+,(a0)+
+	move.b	(a6)+,(a0)+
+	move.b	(a6)+,(a0)+
+
+	tst.w	adsrloopmask_pending
+	beq.s	.adsrloopmask_done
+	lea	adsrloopmask_packet,a0
+	moveq	#3-1,d7
+	bsr	send_midi
+	clr.w	adsrloopmask_pending
+.adsrloopmask_done:
+
 	tst.w	glide_pending
 	beq.s	.glide_done
 	lea	glide_packet,a0
 	moveq	#3-1,d7
-	bsr.s	send_midi
+	bsr	send_midi
 	clr.w	glide_pending
 .glide_done:
 
@@ -547,14 +588,6 @@ newvbl:	tst.w	playing
 	bsr	send_midi
 	clr.w	fm_pending
 .fm_done:
-
-	tst.w	adsrloopmask_pending
-	beq.s	.adsrloopmask_done
-	lea	adsrloopmask_packet,a0
-	moveq	#3-1,d7
-	bsr	send_midi
-	clr.w	adsrloopmask_pending
-.adsrloopmask_done:
 
 	tst.w	keytrack_pending
 	beq.s	.keytrack_done
@@ -585,17 +618,6 @@ newvbl:	tst.w	playing
 	addq.l	#1,$0466.w
 
 	rte
-
-	ifne	0
-
-newvbl:	;movem.l	d0-a6,-(sp)
-
-	addq.l	#1,$0466.w			; increase system vbl count
-
-	;movem.l	(sp)+,d0-a6
-	rte
-
-	endc
 
 ;-------------------------------------------------------------------------------
 
@@ -677,3 +699,6 @@ velocity2text:
 
 pattern_text:
 	ds.b	256
+
+last_note:
+	ds.b	4
