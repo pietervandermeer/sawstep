@@ -6,6 +6,8 @@ This program may damage your bicycle. blablabla, legalese yadayada. goodbye.
 
 Sawstep - a step sequencer for the sawbench synthesizer, for Atari ST
 
+Version 0.4 - dec 2015, STNICCC edition
+
 System Requirements:
 
 Atari ST, or compatible, 640x400x2 resolution. Falcon/TT compatible. 512k RAM
@@ -16,6 +18,22 @@ Description:
 A step sequencer that can also control the sawbench' midi-only features. The 
 sequence is just 16 notes in a row that can be sped up and down and edited with
 the Atari's keyboard. 
+
+Display:
+- top row denotes all the notes
+- the middle row denotes the velocities (0-127) for each note
+- the bottom line denotes all the effects and settings
+
+For instance:
+G 127 F 000 R 027 T 064 la lf L 120BPM
+|     |     |     |     |  |  | +- tempo
+|     |     |     |     |  |  +--- legato mode
+|     |     |     |     |  +------ vcf env loop
+|     |     |     |     +--------- vca env loop
+|     |     |     +--------------- vcf keytracking
+|     |     +--------------------- FM frequency
+|     +--------------------------- FM depth
++--------------------------------- glide
 
 Controls:
 
@@ -29,6 +47,7 @@ num -      : decrease tempo
 .          : increase velocity
 up arrow   : increase key
 down arror : decrease key
+-          : activate/deactivate note
 0          : set velocity to zero
 l          : toggle legato
 [          : toggle vca envelope looping
@@ -39,9 +58,9 @@ f          : fm modulation depth down
 F          : FM modulation depth up
 t          : vcf keyboard tracking down
 T          : vcf keyboard tracking up
+enter      : tap tempo (tap twice)
 
 Future updates:
 - multiple patterns
 - load/save
-- bpm indication
 - multi-channel (for controlling a beatbox in parallel)
